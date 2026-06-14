@@ -21,6 +21,11 @@ local isFirstTime = preferences.getBoolean("isFirstTime", true)
 -- Firebase Database Configuration
 local FIREBASE_URL = "https://card-game-f8aa2-default-rtdb.firebaseio.com/"
 
+-- Auto-Update Configuration
+local CURRENT_VERSION = "1.0" -- Jab naya update banayein, yahan version change kar dain
+local VERSION_URL = "https://raw.githubusercontent.com/abdulraufamir559-prog/The-end-of-kindness/main/version.txt"
+local GITHUB_REPO_URL = "https://github.com/abdulraufamir559-prog/The-end-of-kindness"
+
 -- Global Variables for Audio, TTS, and Multiplayer State
 local currentMusicPlayer = nil
 local ttsEngine = nil
@@ -43,6 +48,35 @@ local showMainMenu
 local startNewGame
 local stopMultiplayerTimer
 local showMultiplayerLobby
+
+-- ==========================================
+-- AUTO UPDATE CHECKER
+-- ==========================================
+local function checkForUpdates()
+  Http.get(VERSION_URL, function(code, body)
+    if code == 200 and body then
+      local latestVersion = body:match("^%s*(.-)%s*$") -- remove extra spaces/newlines
+      if latestVersion ~= "" and latestVersion ~= CURRENT_VERSION then
+        activity.runOnMainThread(Runnable({
+          run = function()
+            local updateDialog = AlertDialog.Builder(activity)
+            updateDialog.setTitle("New Update Available")
+            updateDialog.setMessage("A new version (" .. latestVersion .. ") is available. Please update the game from GitHub.")
+            updateDialog.setCancelable(false)
+            updateDialog.setPositiveButton("Update Now", DialogInterface.OnClickListener({
+              onClick = function()
+                local intent = Intent(Intent.ACTION_VIEW).setData(Uri.parse(GITHUB_REPO_URL))
+                activity.startActivity(intent)
+              end
+            }))
+            updateDialog.setNegativeButton("Later", nil)
+            updateDialog.show()
+          end
+        }))
+      end
+    end
+  end)
+end
 
 -- ==========================================
 -- BACKGROUND MUSIC MANAGEMENT
@@ -740,6 +774,9 @@ end
 function showMainMenu()
   playMusic(MENU_MUSIC_PATH, true)
   isMultiplayer = false 
+
+  -- Call Update Checker when Main Menu is shown
+  checkForUpdates()
 
   local currentName = preferences.getString("userName", "Player")
   local wins = preferences.getInt("userWins", 0)
