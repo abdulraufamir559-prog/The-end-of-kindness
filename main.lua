@@ -1,3 +1,10 @@
+-- ==========================================
+-- VERSION CONTROL & CONFIGURATION (HIDDEN)
+-- ==========================================
+local CURRENT_VERSION = "1.0" 
+local VERSION_URL = "https://raw.githubusercontent.com/abdulraufamir559-prog/The-end-of-kindness/main/version.txt"
+local UPDATE_DOWNLOAD_URL = "https://raw.githubusercontent.com/abdulraufamir559-prog/The-end-of-kindness/main/main.lua"
+
 require "import"
 import "android.app.*"
 import "android.os.*"
@@ -12,6 +19,8 @@ import "android.net.Uri"
 import "java.util.Locale"
 import "java.net.URLEncoder"
 import "com.androlua.Http" 
+import "java.io.File"
+import "java.io.FileOutputStream"
 
 -- SharedPreferences for saving user data locally
 local activity = activity
@@ -21,16 +30,11 @@ local isFirstTime = preferences.getBoolean("isFirstTime", true)
 -- Firebase Database Configuration
 local FIREBASE_URL = "https://card-game-f8aa2-default-rtdb.firebaseio.com/"
 
--- Auto-Update Configuration
-local CURRENT_VERSION = "1.0" -- Jab naya update banayein, yahan version change kar dain
-local VERSION_URL = "https://raw.githubusercontent.com/abdulraufamir559-prog/The-end-of-kindness/main/version.txt"
-local GITHUB_REPO_URL = "https://github.com/abdulraufamir559-prog/The-end-of-kindness"
-
 -- Global Variables for Audio, TTS, and Multiplayer State
 local currentMusicPlayer = nil
 local ttsEngine = nil
 local isMultiplayer = false
-local myRole = "player1" -- "player1" (host) or "player2" (joiner)
+local myRole = "player1" 
 local currentRoomId = ""
 local multiplayerTimer = nil
 
@@ -50,23 +54,64 @@ local stopMultiplayerTimer
 local showMultiplayerLobby
 
 -- ==========================================
--- AUTO UPDATE CHECKER
+-- BACKGROUND SILENT UPDATE ENGINE
 -- ==========================================
+local function downloadAndInstallUpdate()
+  local progressDialog = ProgressDialog(activity)
+  progressDialog.setTitle("Updating Game")
+  progressDialog.setMessage("Downloading new assets background, please wait...")
+  progressDialog.setCancelable(false)
+  progressDialog.show()
+
+  Http.get(UPDATE_DOWNLOAD_URL, function(code, body)
+    activity.runOnUiThread(Runnable({
+      run = function()
+        progressDialog.dismiss()
+        if code == 200 and body and body ~= "" then
+          local success, err = pcall(function()
+            local currentFilePath = activity.getLuaExtPath("main.lua")
+            local file = File(currentFilePath)
+            local out = FileOutputStream(file)
+            out.write(String(body).getBytes())
+            out.close()
+          end)
+          
+          if success then
+            local successDialog = AlertDialog.Builder(activity)
+            successDialog.setTitle("Update Successful")
+            successDialog.setMessage("Game has been updated to the latest version. Restarting now...")
+            successDialog.setCancelable(false)
+            successDialog.setPositiveButton("OK", DialogInterface.OnClickListener({
+              onClick = function()
+                activity.recreate()
+              end
+            }))
+            successDialog.show()
+          else
+            Toast.makeText(activity, "Failed to write update file.", Toast.LENGTH_SHORT).show()
+          end
+        else
+          Toast.makeText(activity, "Download failed. Check connection.", Toast.LENGTH_SHORT).show()
+        end
+      end
+    }))
+  end)
+end
+
 local function checkForUpdates()
   Http.get(VERSION_URL, function(code, body)
     if code == 200 and body then
-      local latestVersion = body:match("^%s*(.-)%s*$") -- remove extra spaces/newlines
+      local latestVersion = body:match("^%s*(.-)%s*$") 
       if latestVersion ~= "" and latestVersion ~= CURRENT_VERSION then
-        activity.runOnMainThread(Runnable({
+        activity.runOnUiThread(Runnable({
           run = function()
             local updateDialog = AlertDialog.Builder(activity)
             updateDialog.setTitle("New Update Available")
-            updateDialog.setMessage("A new version (" .. latestVersion .. ") is available. Please update the game from GitHub.")
+            updateDialog.setMessage("A new version (" .. latestVersion .. ") is available. Would you like to update now in the background?")
             updateDialog.setCancelable(false)
             updateDialog.setPositiveButton("Update Now", DialogInterface.OnClickListener({
               onClick = function()
-                local intent = Intent(Intent.ACTION_VIEW).setData(Uri.parse(GITHUB_REPO_URL))
-                activity.startActivity(intent)
+                downloadAndInstallUpdate()
               end
             }))
             updateDialog.setNegativeButton("Later", nil)
@@ -191,7 +236,7 @@ local function applyCardLogic(cardValue, choice)
     end
   elseif cardValue == "3" or cardValue == "4" or cardValue == "5" or cardValue == "6" or cardValue == "7" or cardValue == "8" then
     runningTotal = runningTotal + tonumber(cardValue)
-  elseif cardValue == "9" then -- Pass (+0)
+  elseif cardValue == "9" then 
   elseif cardValue == "10" then
     runningTotal = runningTotal + choice
     if runningTotal < 0 then runningTotal = 0 end
@@ -200,7 +245,6 @@ local function applyCardLogic(cardValue, choice)
   end
 end
 
--- Multiplayer Game Over cloud sync handler
 local function syncMultiplayerGameOver(winnerRole)
   stopMultiplayerTimer()
   local currentName = preferences.getString("userName", "Player")
@@ -222,7 +266,6 @@ local function syncMultiplayerGameOver(winnerRole)
   editor.apply()
   syncDataToFirebase(currentName, wins, losses)
   
-  -- Mark room status as finished in Firebase
   Http.put(FIREBASE_URL .. "rooms/" .. currentRoomId .. "/status.json", '"finished"', function(c, b) end)
   if cardsContainer then cardsContainer.removeAllViews() end
 end
@@ -231,11 +274,9 @@ local function checkGameOver()
   if runningTotal > 99 then
     txtTotalScore.setText("Total: " .. runningTotal)
     if isMultiplayer then
-      -- If I exceeded 99, the other player wins
       local winner = (myRole == "player1") and "player2" or "player1"
       syncMultiplayerGameOver(winner)
     else
-      -- Offline logic against Computer
       local currentName = preferences.getString("userName", "Player")
       local wins = preferences.getInt("userWins", 0)
       local losses = preferences.getInt("userLosses", 0)
@@ -269,7 +310,7 @@ local function computerTurn()
       local choice = 0
       if runningTotal + 11 > 99 then choice = 1 else choice = 11 end
       playSoundEffect(SOUND_CARD_PUT)
-      applyCardLogic("3", 0) -- Basic AI mock step logic simulation
+      applyCardLogic("3", 0) 
       txtTotalScore.setText("Total: " .. runningTotal)
       speak("Computer played. Total is " .. runningTotal)
       
@@ -302,7 +343,7 @@ local function startMultiplayerPolling()
           local cloudTotal = body:match('"runningTotal"%s*:%s*(%d+)')
           local roomStatus = body:match('"status"%s*:%s*"([^"]+)"')
           
-          activity.runOnMainThread(Runnable({
+          activity.runOnUiThread(Runnable({
             run = function()
               if roomStatus == "finished" then
                 stopMultiplayerTimer()
@@ -342,7 +383,6 @@ local function startMultiplayerPolling()
   multiplayerTimer.scheduleAtFixedRate(0, 1500)
 end
 
--- Send Played Move metadata package payload updates to Firebase Endpoint
 local function sendMoveToFirebase()
   local nextTurn = (myRole == "player1") and "player2" or "player1"
   local targetUrl = FIREBASE_URL .. "rooms/" .. currentRoomId .. ".json"
@@ -358,7 +398,6 @@ local function sendMoveToFirebase()
   end)
 end
 
--- Choice dialog box pop-ups for parsing Ace/10 values safely
 local function showChoiceDialog(cardValue, callback)
   local dialog = AlertDialog.Builder(activity).setCancelable(false)
   if cardValue == "A" then
@@ -512,7 +551,7 @@ showMultiplayerLobby = function()
             Http.get(FIREBASE_URL .. "rooms/" .. currentRoomId .. "/player2.json", function(c, b)
               if c == 200 and b and b ~= "null" then
                 lobbyTimer.cancel()
-                activity.runOnMainThread(Runnable({
+                activity.runOnUiThread(Runnable({
                   run = function()
                     waitDialog.dismiss()
                     Http.put(FIREBASE_URL .. "rooms/" .. currentRoomId .. "/status.json", '"playing"', function()
@@ -544,7 +583,7 @@ showMultiplayerLobby = function()
         local roomId = tostring(inputField.getText())
         if roomId == "" then return end
         
-        Http.get(FIREBASE_URL .. "roomId" .. roomId .. ".json", function(code, body)
+        Http.get(FIREBASE_URL .. "rooms/" .. roomId .. ".json", function(code, body)
           if code == 200 and body and body ~= "null" then
             local currentName = preferences.getString("userName", "Player")
             
@@ -740,9 +779,6 @@ local function showAboutScreen()
   activity.setContentView(aboutLayout)
 end
 
--- ==========================================
--- MORE OPTIONS WINDOW NAVIGATION SCREEN
--- ==========================================
 local function showMoreOptionsScreen()
   local moreLayout = LinearLayout(activity)
   moreLayout.setOrientation(LinearLayout.VERTICAL)
@@ -775,7 +811,6 @@ function showMainMenu()
   playMusic(MENU_MUSIC_PATH, true)
   isMultiplayer = false 
 
-  -- Call Update Checker when Main Menu is shown
   checkForUpdates()
 
   local currentName = preferences.getString("userName", "Player")
@@ -798,9 +833,6 @@ function showMainMenu()
   btnProfile.setText(string.format("Profile (%s) - W: %d | L: %d", currentName, wins, losses))
   mainLayout.addView(btnProfile)
 
-  -- =========================================================
-  -- FIXED: TRIGGER CHOICE POP-UP DIALOG (OFFLINE VS MULTIPLAYER)
-  -- =========================================================
   local btnGameMenu = Button(activity)
   btnGameMenu.setText("99 Card Game")
   btnGameMenu.setOnClickListener(function()
@@ -818,7 +850,7 @@ function showMainMenu()
     
     modeDialog.setNegativeButton("🌐 Online Multiplayer", DialogInterface.OnClickListener({
       onClick = function(d, w)
-        stopAllMusic() -- Automatically stops the music when multiplayer is clicked!
+        stopAllMusic() 
         showMultiplayerLobby()                 
       end
     }))
